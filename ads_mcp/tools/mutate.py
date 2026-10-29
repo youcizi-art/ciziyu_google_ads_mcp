@@ -14,7 +14,7 @@
 
 """Tools for creating and modifying Google Ads campaigns, ad groups, budgets, and keywords."""
 
-from typing import Any, Dict
+from typing import Any, Dict, List, Optional
 import uuid
 from fastmcp import FastMCP
 from fastmcp.exceptions import ToolError
@@ -360,3 +360,188 @@ def add_keyword_to_ad_group(
         raise ToolError(
             f"Request ID: {ex.request_id}\n" + "\n".join(error_msgs)
         )
+
+
+@mutate_mcp.tool()
+def set_campaign_geo_targets(
+    customer_id: str | int,
+    campaign_id: str | int,
+    target_countries: List[str] | None = None,
+    exclude_countries: List[str] | None = None,
+    login_customer_id: str | int | None = None,
+) -> Dict[str, Any]:
+    """Sets positive target geographic locations and negative excluded geographic locations for a campaign.
+
+    Args:
+        customer_id: The Google Ads customer ID (e.g. '620-450-6866').
+        campaign_id: The ID of the campaign to target or exclude locations on.
+        target_countries: List of 2-letter ISO country codes or geo constants to positively target (e.g. ['US', 'DE', 'MX', 'VN']).
+        exclude_countries: List of 2-letter ISO country codes or geo constants to exclude (e.g. ['IN', 'PK', 'NG']).
+        login_customer_id: Optional manager MCC customer ID.
+    """
+    cleaned_customer_id = utils.clean_customer_id(customer_id)
+    cleaned_campaign_id = str(campaign_id).strip()
+
+    from ads_mcp.tools.keywords import BUILTIN_COUNTRIES
+
+    client = utils.get_googleads_client(login_customer_id=login_customer_id)
+    criterion_service = utils.get_googleads_service(
+        "CampaignCriterionService", login_customer_id=login_customer_id
+    )
+
+    operations = []
+    targeted_list = []
+    excluded_list = []
+
+    def resolve_geo_constant(code_or_name: str) -> tuple[str, str]:
+        upper = code_or_name.strip().upper()
+        if upper in BUILTIN_COUNTRIES:
+            geo_id, name = BUILTIN_COUNTRIES[upper]
+            return f"geoTargetConstants/{geo_id}", f"{name} ({upper})"
+        if code_or_name.startswith("geoTargetConstants/"):
+            return code_or_name, code_or_name
+        if code_or_name.isdigit():
+            return f"geoTargetConstants/{code_or_name}", f"GeoTarget/{code_or_name}"
+        # Fallback to search
+        return f"geoTargetConstants/{code_or_name}", code_or_name
+
+    if target_countries:
+        for c in target_countries:
+            geo_res, name = resolve_geo_constant(c)
+            op = client.get_type("CampaignCriterionOperation")
+            crit = op.create
+            crit.campaign = f"customers/{cleaned_customer_id}/campaigns/{cleaned_campaign_id}"
+            crit.location.geo_target_constant = geo_res
+            crit.negative = False
+            operations.append(op)
+            targeted_list.append(name)
+
+    if exclude_countries:
+        for c in exclude_countries:
+            geo_res, name = resolve_geo_constant(c)
+            op = client.get_type("CampaignCriterionOperation")
+            crit = op.create
+            crit.campaign = f"customers/{cleaned_customer_id}/campaigns/{cleaned_campaign_id}"
+            crit.location.geo_target_constant = geo_res
+            crit.negative = True
+            operations.append(op)
+            excluded_list.append(name)
+
+    if not operations:
+        return {
+            "status": "SKIPPED",
+            "message": "No target or exclude countries provided."
+        }
+
+    try:
+        response = criterion_service.mutate_campaign_criteria(
+            customer_id=cleaned_customer_id, operations=operations
+        )
+        return {
+            "status": "SUCCESS",
+            "campaign_id": cleaned_campaign_id,
+            "targeted_locations": targeted_list,
+            "excluded_locations": excluded_list,
+            "total_criteria_mutated": len(response.results),
+            "summary": f"成功为广告系列 {cleaned_campaign_id} 配置地理定向：定向 {len(targeted_list)} 个地区，排除 {len(excluded_list)} 个地区。"
+        }
+    except GoogleAdsException as ex:
+        error_msgs = [f"Google Ads API Error: {error.message}" for error in ex.failure.errors]
+        raise ToolError(f"Request ID: {ex.request_id}\n" + "\n".join(error_msgs))
+
+
+@mutate_mcp.tool()
+def set_campaign_ad_schedule(
+    customer_id: str | int,
+    campaign_id: str | int,
+    schedule_preset: str = "B2B_BUSINESS_HOURS",
+    custom_schedules: List[Dict[str, Any]] | None = None,
+    login_customer_id: str | int | None = None,
+) -> Dict[str, Any]:
+    """Sets precise ad delivery schedules for a campaign (e.g. B2B business hours or custom time slots).
+
+    Args:
+        customer_id: The Google Ads customer ID (e.g. '620-450-6866').
+        campaign_id: The ID of the campaign to schedule.
+        schedule_preset: 'B2B_BUSINESS_HOURS' (Mon-Fri 08:00-18:00 target timezone), 'ALL_WEEK_WORK_HOURS' (Mon-Sun 08:00-22:00), or 'CUSTOM'.
+        custom_schedules: List of dicts if schedule_preset='CUSTOM', each containing:
+            - 'day_of_week': 'MONDAY', 'TUESDAY', etc.
+            - 'start_hour': int (0-23)
+            - 'start_minute': 'ZERO', 'FIFTEEN', 'THIRTY', or 'FORTY_FIVE'
+            - 'end_hour': int (0-24)
+            - 'end_minute': 'ZERO', 'FIFTEEN', 'THIRTY', or 'FORTY_FIVE'
+        login_customer_id: Optional manager MCC customer ID.
+    """
+    cleaned_customer_id = utils.clean_customer_id(customer_id)
+    cleaned_campaign_id = str(campaign_id).strip()
+
+    client = utils.get_googleads_client(login_customer_id=login_customer_id)
+    criterion_service = utils.get_googleads_service(
+        "CampaignCriterionService", login_customer_id=login_customer_id
+    )
+
+    operations = []
+    slots_info = []
+
+    if schedule_preset == "B2B_BUSINESS_HOURS":
+        work_days = ["MONDAY", "TUESDAY", "WEDNESDAY", "THURSDAY", "FRIDAY"]
+        for day in work_days:
+            op = client.get_type("CampaignCriterionOperation")
+            crit = op.create
+            crit.campaign = f"customers/{cleaned_customer_id}/campaigns/{cleaned_campaign_id}"
+            crit.ad_schedule.day_of_week = client.enums.DayOfWeekEnum[day].value
+            crit.ad_schedule.start_hour = 8
+            crit.ad_schedule.start_minute = client.enums.MinuteOfHourEnum.ZERO.value
+            crit.ad_schedule.end_hour = 19
+            crit.ad_schedule.end_minute = client.enums.MinuteOfHourEnum.ZERO.value
+            operations.append(op)
+            slots_info.append(f"{day} 08:00 - 19:00")
+    elif schedule_preset == "ALL_WEEK_WORK_HOURS":
+        all_days = ["MONDAY", "TUESDAY", "WEDNESDAY", "THURSDAY", "FRIDAY", "SATURDAY", "SUNDAY"]
+        for day in all_days:
+            op = client.get_type("CampaignCriterionOperation")
+            crit = op.create
+            crit.campaign = f"customers/{cleaned_customer_id}/campaigns/{cleaned_campaign_id}"
+            crit.ad_schedule.day_of_week = client.enums.DayOfWeekEnum[day].value
+            crit.ad_schedule.start_hour = 8
+            crit.ad_schedule.start_minute = client.enums.MinuteOfHourEnum.ZERO.value
+            crit.ad_schedule.end_hour = 22
+            crit.ad_schedule.end_minute = client.enums.MinuteOfHourEnum.ZERO.value
+            operations.append(op)
+            slots_info.append(f"{day} 08:00 - 22:00")
+    elif custom_schedules:
+        for slot in custom_schedules:
+            op = client.get_type("CampaignCriterionOperation")
+            crit = op.create
+            crit.campaign = f"customers/{cleaned_customer_id}/campaigns/{cleaned_campaign_id}"
+            day = slot["day_of_week"].upper()
+            crit.ad_schedule.day_of_week = client.enums.DayOfWeekEnum[day].value
+            crit.ad_schedule.start_hour = int(slot["start_hour"])
+            crit.ad_schedule.start_minute = client.enums.MinuteOfHourEnum[slot.get("start_minute", "ZERO")].value
+            crit.ad_schedule.end_hour = int(slot["end_hour"])
+            crit.ad_schedule.end_minute = client.enums.MinuteOfHourEnum[slot.get("end_minute", "ZERO")].value
+            operations.append(op)
+            slots_info.append(f"{day} {slot['start_hour']}:00 - {slot['end_hour']}:00")
+
+    if not operations:
+        return {
+            "status": "SKIPPED",
+            "message": "No schedule slots created."
+        }
+
+    try:
+        response = criterion_service.mutate_campaign_criteria(
+            customer_id=cleaned_customer_id, operations=operations
+        )
+        return {
+            "status": "SUCCESS",
+            "campaign_id": cleaned_campaign_id,
+            "preset_applied": schedule_preset,
+            "scheduled_slots": slots_info,
+            "total_slots_created": len(response.results),
+            "summary": f"成功为广告系列 {cleaned_campaign_id} 设置精准排期：共添加 {len(slots_info)} 个投放时段。"
+        }
+    except GoogleAdsException as ex:
+        error_msgs = [f"Google Ads API Error: {error.message}" for error in ex.failure.errors]
+        raise ToolError(f"Request ID: {ex.request_id}\n" + "\n".join(error_msgs))
+

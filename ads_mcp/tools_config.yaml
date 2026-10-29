@@ -9,3 +9,5 @@ namespaces:
   metadata: true
   mutate: true
   keywords: true
+  optimizer: true
+  assets: true
