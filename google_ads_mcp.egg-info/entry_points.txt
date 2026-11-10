@@ -1,3 +1,0 @@
-[console_scripts]
-google-ads-mcp = ads_mcp.server:run_server
-google-ads-mcp-update-gaql = ads_mcp.update_references:update_gaql_resource_file
