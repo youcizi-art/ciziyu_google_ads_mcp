@@ -29,7 +29,9 @@ from google.ads.googleads.v25.services.services.google_ads_service import (
 from google.ads.googleads.util import get_nested_attr
 import google.auth
 from ads_mcp.mcp_header_interceptor import MCPHeaderInterceptor
+import json
 import os
+from pathlib import Path
 import re
 import importlib.resources
 import contextlib
@@ -68,8 +70,56 @@ def prevent_stdio_inheritance():
         yield
 
 
+def _bootstrap_ads_credentials_from_auth_dir() -> None:
+    """If Deploy set CIZHENYU_AUTH_DIR, map google/ads.json → GOOGLE_APPLICATION_CREDENTIALS.
+
+    Secrets stay in the Deploy credentials directory; this only points ADC at that path.
+    """
+    if os.environ.get("GOOGLE_APPLICATION_CREDENTIALS", "").strip():
+        return
+    for key in ("CIZHENYU_AUTH_DIR", "SEOGEO_AUTH_DIR"):
+        base = os.environ.get(key, "").strip()
+        if not base:
+            continue
+        meta = Path(base) / "google" / "ads.json"
+        if meta.is_file():
+            try:
+                conf = json.loads(meta.read_text(encoding="utf-8-sig"))
+                pointed = (
+                    conf.get("credentialsPath")
+                    or conf.get("credentials_path")
+                    or conf.get("path")
+                    or ""
+                ).strip()
+                if pointed and Path(pointed).is_file():
+                    os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = pointed
+                    return
+            except (OSError, ValueError, TypeError):
+                pass
+        for rel in ("google/ads_adc.json", "ads_adc.json"):
+            candidate = Path(base) / rel
+            if candidate.is_file():
+                os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = str(candidate)
+                return
+        # developer token / login customer from sidecar if not already in env
+        if meta.is_file():
+            try:
+                conf = json.loads(meta.read_text(encoding="utf-8-sig"))
+                if not os.environ.get("GOOGLE_ADS_DEVELOPER_TOKEN"):
+                    tok = (conf.get("developerToken") or conf.get("developer_token") or "").strip()
+                    if tok:
+                        os.environ["GOOGLE_ADS_DEVELOPER_TOKEN"] = tok
+                if not os.environ.get("GOOGLE_ADS_LOGIN_CUSTOMER_ID"):
+                    cid = (conf.get("loginCustomerId") or conf.get("login_customer_id") or "").strip()
+                    if cid:
+                        os.environ["GOOGLE_ADS_LOGIN_CUSTOMER_ID"] = cid
+            except (OSError, ValueError, TypeError):
+                pass
+
+
 def _create_credentials() -> google.auth.credentials.Credentials:
     """Returns Application Default Credentials with the Google Ads scope, or the FastMCP token if found."""
+    _bootstrap_ads_credentials_from_auth_dir()
     from fastmcp.server.dependencies import get_access_token
     from google.oauth2.credentials import Credentials
 

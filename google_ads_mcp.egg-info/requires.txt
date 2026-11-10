@@ -1,0 +1,10 @@
+google-ads>=33.0.0
+mcp[cli]<3,>=2.0.0
+fastmcp<5,>=4.0.6
+
+[dev]
+black
+nox<2026,>=2025.5.1
+
+[firestore]
+py-key-value-aio[firestore]<0.5.0,>=0.4.5

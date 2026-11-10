@@ -796,19 +796,20 @@ def generate_high_converting_rsa_assets(
     target_audience: str,
     concrete_proof_points: List[str],
     price_or_threshold_filter: str | None = None,
-    disqualifier_tags: List[str] | None = None,
+    persona_focus_tags: List[str] | None = None,
     language_code: str = "zh",
 ) -> Dict[str, Any]:
-    """Generates high-converting, professional RSA headlines & descriptions engineered with concrete proof, quantified value, and qualification filters.
+    """Generates high-converting, professional RSA headlines & descriptions engineered across 6 direct-response angles.
 
-    Filters out tire-kickers/unqualified clicks (e.g. B2C shoppers or zero-budget users) while compelling ideal buyers to take action.
+    Strictly applies positive persona alignment and quantified proof. NEVER generates negative exclusions like 'not for X'.
+    Guarantees strict character limits: Headline <= 30 half-width (15 CJK chars), Description <= 90 half-width (45 CJK chars).
 
     Args:
-        product_name: Name of product/service (e.g. '磁帧鱼 B2B建站系统', 'Industrial Solar Inverter').
-        target_audience: Specific buyer persona (e.g. '工贸一体出海工厂', 'Wholesale Distributors').
-        concrete_proof_points: Hard facts/numbers (e.g. ['每年仅需几十元域名费告别昂贵服务器', '新站一周内被谷歌收录', '夜间AI自动承接WhatsApp询盘']).
-        price_or_threshold_filter: Explicit price or threshold to filter out low-budget clicks (e.g. '最低起订500件', '首年仅$1起', '起价¥2980').
-        disqualifier_tags: Audience qualifiers to deter wrong traffic (e.g. ['仅限B2B企业', '不适合个人零售', '专为外贸工厂定制']).
+        product_name: Brand/product name (e.g. '磁帧鱼', 'B2B CMS').
+        target_audience: Ideal buyer persona (e.g. 'B2B外贸企业与业务员', '工贸一体出海工厂').
+        concrete_proof_points: Verifiable numbers & facts (e.g. ['年服务器费仅需域名费', '新站一周内被谷歌收录', '夜间自动接待海外买家']).
+        price_or_threshold_filter: Verified pricing entry gate (e.g. '官网起步价仅$599', '透明方案$599起').
+        persona_focus_tags: Positive persona focus phrases (e.g. ['专为外贸业务员定制', '专注工贸一体建站', 'B2B出海官网方案']).
         language_code: 'zh', 'en', 'de', 'es', etc.
     """
     clean_prod = product_name.strip()
@@ -817,55 +818,88 @@ def generate_high_converting_rsa_assets(
     headlines = []
     descriptions = []
 
-    # 1. 过滤型精准标题 (Disqualifier & Persona Filter) - 阻挡错误点击，节省广告费
-    if disqualifier_tags:
-        for tag in disqualifier_tags[:2]:
-            h = f"{clean_prod} - {tag}"
-            headlines.append(h[:30])
+    def enforce_len(text: str, max_half_width: int = 30) -> str:
+        """Enforces character limit considering Chinese characters count as 2 half-width chars."""
+        curr_len = 0
+        res = []
+        for ch in text:
+            char_width = 2 if ord(ch) > 127 else 1
+            if curr_len + char_width > max_half_width:
+                break
+            res.append(ch)
+            curr_len += char_width
+        return "".join(res)
+
+    # Angle 1: 品类定位与品牌
+    headlines.append(enforce_len(f"{clean_prod} B2B外贸建站" if "zh" in norm_lang else f"{clean_prod} B2B Website CMS"))
+    headlines.append(enforce_len(f"{clean_prod} 独立站系统" if "zh" in norm_lang else f"{clean_prod} Headless CMS"))
+
+    # Angle 2: 正向人群聚焦 (Positive Alignment - 严禁出现负向拒绝词)
+    if persona_focus_tags:
+        for tag in persona_focus_tags[:2]:
+            headlines.append(enforce_len(tag))
+    else:
+        if "zh" in norm_lang:
+            headlines.append(enforce_len("专为外贸业务员定制"))
+            headlines.append(enforce_len("专注工贸一体出海建站"))
+        else:
+            headlines.append(enforce_len("Built for B2B Exporters"))
+            headlines.append(enforce_len("For Factory Sales Teams"))
+
+    # Angle 3: 真实透明定价与门槛 (真实数字如 $599)
     if price_or_threshold_filter:
-        headlines.append(f"{clean_prod} {price_or_threshold_filter}"[:30])
+        headlines.append(enforce_len(price_or_threshold_filter))
+    else:
+        headlines.append(enforce_len("官网起步价仅$599" if "zh" in norm_lang else "Turnkey Plans from $599"))
 
-    # 2. 量化利益与实证标题 (Quantified Value & Proof) - 击中真实痛点
+    # Angle 4: 量化利益与硬核实证 (Proof - 绝不使用抽象套话)
     for proof in concrete_proof_points[:4]:
-        # 保证不超过 30 字符
-        proof_h = proof.strip()
-        if len(proof_h) > 28:
-            proof_h = proof_h[:28]
-        headlines.append(proof_h)
+        headlines.append(enforce_len(proof.strip()))
 
-    # 3. 强力行动召唤 (High-intent CTA)
+    # Angle 5: 技术架构与资产掌控
     if "zh" in norm_lang:
-        headlines.extend([
-            f"立即索取{clean_prod}报价",
-            "预约专业出海建站诊断",
-            "查看工贸一体成功案例"
-        ])
+        headlines.append(enforce_len("基于Cloudflare边缘网络"))
+        headlines.append(enforce_len("100%自有云账户掌控"))
     else:
-        headlines.extend([
-            f"Get {clean_prod} Quote",
-            "Direct Factory Price List",
-            "Book Live Demo Online"
-        ])
+        headlines.append(enforce_len("Cloudflare Edge Powered"))
+        headlines.append(enforce_len("100% Own Your Data & Site"))
 
-    # 4. 4 组长文案描述（严格在 90 字符内，包含痛点+证明+门槛+行动）
+    # Angle 6: 商业行动召唤 (High-Intent CTA)
     if "zh" in norm_lang:
+        headlines.append(enforce_len("立即索取B2B建站报价"))
+        headlines.append(enforce_len("预约专业出海建站诊断"))
+    else:
+        headlines.append(enforce_len("Get B2B Website Quote"))
+        headlines.append(enforce_len("Book Live Turnkey Demo"))
+
+    # 4 组遵循直接响应心理学的描述 (严格 <= 90 字符)
+    if "zh" in norm_lang:
+        price_text = price_or_threshold_filter if price_or_threshold_filter else "官网起步价仅$599"
         descriptions = [
-            f"专为{target_audience}打造！{concrete_proof_points[0] if concrete_proof_points else '告别传统高昂服务器开销'}，系统完全由您自有账户掌控。",
-            f"还在为没有海外询盘发愁？{concrete_proof_points[1] if len(concrete_proof_points)>1 else '技术底座谷歌98分秒级打开'}，内置AI客服守住夜间线索！",
-            f"{price_or_threshold_filter if price_or_threshold_filter else '按需灵活选购透明交付'}。{disqualifier_tags[0] if disqualifier_tags else '专注B2B官网与营销站'}，立即在线咨询方案。",
-            "支持多语言站群与全方位SEO架构，海外采购商主动找上门。今天预约即享专属出海建站优化指导！"
+            enforce_len(f"专为{target_audience}定制！年云开销仅需基础域名费，系统由您自有账户掌控。", 90),
+            enforce_len(f"还在为时差丢失海外询盘发愁？新站一周内谷歌极速收录，内置AI客服夜间自动接单！", 90),
+            enforce_len(f"{price_text}，无隐藏加价。专为工贸一体出海打造，立即在线咨询方案！", 90),
+            enforce_len(f"支持多语言站群部署与谷歌98分SEO架构，海外采购商主动找上门。今天预约建站指导！", 90)
         ]
     else:
+        price_text = price_or_threshold_filter if price_or_threshold_filter else "from $599"
         descriptions = [
-            f"Engineered for {target_audience}. {concrete_proof_points[0] if concrete_proof_points else 'Fast global deployment'} with 100% data ownership.",
-            f"Stop wasting budget on slow hosting. {concrete_proof_points[1] if len(concrete_proof_points)>1 else 'Rank faster on Google'} with built-in AI lead capture.",
-            f"{price_or_threshold_filter if price_or_threshold_filter else 'Transparent pricing'}. {disqualifier_tags[0] if disqualifier_tags else 'Built strictly for B2B enterprises'}.",
-            "Get a custom overseas expansion proposal today. Talk with our deployment specialists now!"
+            enforce_len(f"Engineered for {target_audience}. Runs on $0 server fees with 100% data ownership.", 90),
+            enforce_len(f"Losing overseas leads across time zones? Built-in AI captures WhatsApp inquiries 24/7.", 90),
+            enforce_len(f"Turnkey B2B sites {price_text} with zero hidden costs. Request your custom demo today!", 90),
+            enforce_len(f"Scale across 5+ languages on Cloudflare edge. 98+ PageSpeed helps Google find you faster.", 90)
         ]
 
-    # 清洗确保长度符合 Google 规范 (Headline <= 30, Description <= 90)
-    final_headlines = [h[:30] for h in headlines][:12]
-    final_descriptions = [d[:90] for d in descriptions][:4]
+    # 去重并截取符合 Google 标准的标题池 (10~15条)
+    unique_headlines = []
+    seen_h = set()
+    for h in headlines:
+        if h and h not in seen_h:
+            seen_h.add(h)
+            unique_headlines.append(h)
+
+    final_headlines = unique_headlines[:14]
+    final_descriptions = descriptions[:4]
 
     return {
         "status": "SUCCESS",
@@ -876,9 +910,9 @@ def generate_high_converting_rsa_assets(
         "headlines": final_headlines,
         "descriptions": final_descriptions,
         "marketing_psychology_highlights": {
-            "filter_mechanism": "通过标注明确门槛与受众身份，在用户点击前主动阻断无效/零散个人点击，降低废点击率；",
-            "proof_mechanism": "用硬核可感知的利益（如具体费用、收录时效、具体时段接单）替代空洞抽象的技术宣称；",
-            "cta_alignment": "引导明确商业行动，拉升落地页表单转化率。"
+            "positive_alignment": "彻底剔除负向排斥词，全面采用正向人群聚焦与专业身份呼应；",
+            "quantified_proof": "以真实起步价（如$599）、基础域名费开销、一周内收录等硬核事实替代空洞形容词；",
+            "six_angle_coverage": "系统化覆盖价格门槛、架构掌控、风险消除、交付时效、夜间接单与全球秒开六大决策维度。"
         }
     }
 
