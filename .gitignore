@@ -1,9 +1,14 @@
 ﻿*.idea
+__pycache__/
+*.py[cod]
+*$py.class
 *.pyc
 *.iml
 .python-version
 .gemini
 .vscode
+.venv/
+venv/
 
 # Distribution / packaging
 .Python
